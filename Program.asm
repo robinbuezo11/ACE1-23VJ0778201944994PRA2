@@ -9,6 +9,9 @@
 ;-----------------------------------------------------------------------
 ; Variables
 new_line        db  0a, "$"
+in_buffer       db  20, 00
+                db  20 dup (0)
+number          db  05 dup (30)
 
 ; Header
 usac            db  "Universidad de San Carlos de Guatemala", 0a, "$"
@@ -20,7 +23,9 @@ student         db  "Robin Omar Buezo Díaz", 0a, "$"
 ; Login
 username        db  "Nombre: ", "$"
 carne           db  "Carnet: ", "$"
-login_error     db  "Usuario o clave incorrectos", 0a, "$"
+loginfile_error db  "Error al intentar abrir el archivo", 0a, "$"
+loginauth_error db  "Usuario o clave incorrectos", 0a, "$"
+login_error     db  "Error al intentar iniciar sesion", 0a, "$"
 login_success   db  "Bienvenido, presione 'Enter' ", 0a, "$"
 tk_cred         db  0e, "[credenciales]"
 tk_usuario      db  07, "usuario"
@@ -28,13 +33,41 @@ tk_clave        db  05, "clave"
 config_file     db  "PRA2.CNF", 00
 handle_conf     dw  00
 buffer_line     db  0ff dup (0)
+size_line       db  00
 status          db  00  ; 00 = cred, 01 = usuario|clave, 02 = usuario|clave, 03 = ask
 user            db  0f dup (0)
 pass            db  0f dup (0)
-user_buffer     db  0e dup (0)
-pass_buffer     db  0e dup (0)
+user_buffer     db  0e, 00
+                db  0e dup (0)
+pass_buffer     db  0e, 00
+                db  0e dup (0)
 
+; Menu
+menu_msg        db  "Ingrese una opcion:", 0a, "$"
+products        db  "(P)roductos", 0a, "$"
+sales           db  "(V)entas", 0a, "$"
+utils           db  "(H)erramientas", 0a, "$"
 
+; Products
+products_msg            db  "MENU DE PRODUCTOS", 0a, "$"
+products_create_msg     db  "(C)rear producto", 0a, "$"
+products_delete_msg     db  "(E)liminar producto", 0a, "$"
+products_show_msg       db  "(M)ostrar productos", 0a, "$"
+products_file           db  "PROD.BIN", 00
+handle_products         dw  0000
+
+; Product Structure
+product_code            db  05 dup (0)
+product_desc            db  21 dup (0)
+product_price           db  05 dup (0)
+product_stock           db  05 dup (0)
+req_product             db  "Ingrese los datos del producto: ", 0a, "$"
+req_code                db  "Codigo: ", 00
+req_desc                db  "Descripcion: ", 00
+req_price               db  "Precio: ", 00
+req_stock               db  "Unidades: ", 00
+product_num_price       dw 0000
+product_num_stock       dw 0000
 
 
 .CODE
@@ -51,6 +84,13 @@ print macro string
     int 21
 endm
 
+; get_string - get string from keyboard
+get_string macro buffer
+    mov DX, offset buffer
+    mov AH, 0a
+    int 21
+endm
+
 ;-------------------------- SUBROUTINES --------------------------------
 ;-----------------------------------------------------------------------
 compare_string: ;--------------------------------Start of compare_string
@@ -60,6 +100,7 @@ compare_string: ;--------------------------------Start of compare_string
         ;        CX = length max
         ; Output: DX = 01 if equal
         ;         DX = 00 if not equal
+        mov AX, 0000
         mov AL, [SI]
         cmp AL, [DI]
         jne not_equals
@@ -72,6 +113,101 @@ not_equals:
         mov DX, 00
         ret     ;--------------------------------End of compare_string  
 
+get_pressed_key: ;--------------------------------Start of get_pressed_key
+        ; Get pressed key
+        ; Output: AL = pressed key
+        mov AH, 08
+        int 21
+        ret
+        ;--------------------------------End of get_pressed_key
+
+copy_string: ;------------------------------------Start of copy_string
+        ; Copy string
+        ; Input: SI = Source string
+        ;        DI = Destination string
+        ;        CX = length max
+        ; Output: SI = Source string
+        ;         DI = Source string
+        mov AL, [SI]
+        mov [DI], AL
+        inc SI
+        inc DI
+        loop copy_string
+        ret
+        ;------------------------------------End of copy_string
+
+string_to_int: ;----------------------------------Start of string_to_int
+        ; Convert string to int
+        ; Input: DI = string
+        ; Output: AX = int
+        mov AX, 0000
+        mov CX, 0005
+cycle_string_to_int:
+        mov BL, [DI]
+        cmp BL, 00
+        je end_string_to_int
+        sub BL, 30
+        mov DX, 000a
+        mul DX
+        mov BH, 00
+        add AX, BX
+        inc DI
+        loop cycle_string_to_int
+end_string_to_int:
+        ret
+        ;----------------------------------End of string_to_int
+
+int_to_string: ;------------------------------------Start of int_to_string
+        ; Convert int to string
+        ; Input: AX = int
+        ; Output: [number] = string
+        mov CX, 0005
+        mov DI, offset number
+cycle_set30:
+        mov BL, 30
+        mov [DI], BL
+        inc DI
+        loop cycle_set30
+        
+        mov CX, AX
+        mov DI, offset number
+        add DI, 04
+cycle_int_to_string:
+        mov BL, [DI]
+        inc BL
+        mov [DI], BL
+        cmp BL, 3a
+        je increase_next
+        loop cycle_int_to_string
+        jmp end_int_to_string
+increase_next:
+        push DI
+increase_next_cycle:
+        mov BL, 30
+        mov [DI], BL
+        dec DI
+        mov BL, [DI]
+        inc BL
+        mov [DI], BL
+        cmp BL, 3a
+        je increase_next_cycle
+        pop DI
+        loop cycle_int_to_string
+end_int_to_string:
+        ret
+        ;------------------------------------End of int_to_string
+
+memset: ;----------------------------------------------Start of memset
+        ; Set memory
+        ; Input: DI = memory
+        ;        CX = length
+        ;        AL = value
+        mov [DI], AL
+        inc DI
+        loop memset
+        ret
+        ;----------------------------------------------End of memset
+
 ;---------------------------- PROGRAM -----------------------------------
 start:
         ; Print header
@@ -82,6 +218,9 @@ start:
         print student
         print new_line
 
+
+
+
 login: ;----------------------------------------------Start of login
         ; Open config file
         mov AH, 3d
@@ -90,60 +229,69 @@ login: ;----------------------------------------------Start of login
         int 21
 
         ; If error, close program
-        jc close
+        jc error_login_file
 
         ; Save handle
         mov [handle_conf], AX
 
         ; Analyze config file
+init_lineXline:
         mov DI, offset buffer_line
+        mov AL, 00
+        mov [size_line], AL
 cycle_lineXline: ;---------------- Read line from file
+        mov AL, 00
         mov AH, 3f
         mov BX, [handle_conf]
-        mov CX, 01
+        mov CX, 0001
         mov DX, DI
-
+        int 21
         ; If no more bytes, end
-        cmp AX, 00
+        cmp AX, 0000
         je end_read_line
 
         ; if byte read is 0a, end
         mov AL, [DI]
+        cmp AL, 0d
+        je carriage_return
         cmp AL, 0a
         je end_read_line
-        cmp AL, 0d
-        je end_read_line
+        mov AL, [size_line]
+        inc AL
+        mov [size_line], AL
+        inc DI
+        jmp cycle_lineXline
+carriage_return:
         inc DI
         jmp cycle_lineXline
 end_read_line: ;--------------------End of read line
         mov AL, 00
-        cmp AL, status
+        cmp AL, [status]
         je get_cred ;-----------------Get credentials
         mov AL, 01
-        cmp AL, status
+        cmp AL, [status]
         je get_user_pass ;------------Get user and pass
         mov AL, 02  
-        cmp AL, status
+        cmp AL, [status]
         je get_user_pass ;------------Get user and pass
         mov AL, 03  
-        cmp AL, status
+        cmp AL, [status]
         je ask_user_pass ;------------Ask user and pass
 get_cred:   ;--------------------------Get credentials
-        int 03
         mov CH, 00
         mov CL, [tk_cred]
         mov SI, offset buffer_line
         mov DI, offset tk_cred
         inc DI
         call compare_string
-        cmp DX, 01
+        cmp DX, 0001
         je exists_cred
         jmp error_login
 exists_cred:
         mov AL, [status]
         inc AL
         mov [status], AL
-        jmp cycle_lineXline
+        jmp init_lineXline
 get_user_pass:  ;---------------------Get user and pass
         mov CH, 00
         mov CL, [tk_usuario]
@@ -151,7 +299,7 @@ get_user_pass:  ;---------------------Get user and pass
         mov DI, offset tk_usuario
         inc DI
         call compare_string
-        cmp DX, 01
+        cmp DX, 0001
         je exists_user
         mov CH, 00
         mov CL, [tk_clave]
@@ -159,131 +307,312 @@ get_user_pass:  ;---------------------Get user and pass
         mov DI, offset tk_clave
         inc DI
         call compare_string
-        cmp DX, 01
+        cmp DX, 0001
         je exists_pass
         jmp error_login
 exists_user:    ;--------------------- This is the user
-        mov AL, [status]
-        inc AL
-        mov [status], AL
 spaces1:
         mov AL, [SI]
+        inc SI
         cmp AL, 20
-        inc SI
         je spaces1
-        mov AL, [SI]
         cmp AL, 3d
-        inc SI
         je get_user_value
         jmp error_login
 get_user_value: ;--------------------- Get user value
 spaces2:
         mov AL, [SI]
-        cmp AL, 20
         inc SI
+        cmp AL, 20
         je spaces2
-        mov AL, [SI]
         cmp AL, 22
         jne error_login
-        inc SI
         mov DI, offset user
-        mov CX, 00
-        mov BX, 01
+        mov CL, 00
+        mov BX, 0001
 loop_user:
         mov AL, [SI]
         cmp AL, 22
         je end_loop_user
         mov [DI+BX], AL
         inc SI
-        inc CX
+        inc CL
         inc BX
         jmp loop_user
 end_loop_user:
-        mov [DI], CX
+        mov [DI], CL
         mov AL, [status]
         inc AL
         mov [status], AL
-        jmp cycle_lineXline
+        jmp init_lineXline
 exists_pass:    ;--------------------- This is the pass
-        mov AL, [status]
-        inc AL
-        mov [status], AL
 spaces3:
         mov AL, [SI]
+        inc SI
         cmp AL, 20
-        inc SI
         je spaces3
-        mov AL, [SI]
         cmp AL, 3d
-        inc SI
         je get_pass_value
         jmp error_login
 get_pass_value: ;--------------------- Get pass value
 spaces4:
         mov AL, [SI]
-        cmp AL, 20
         inc SI
+        cmp AL, 20
         je spaces4
-        mov AL, [SI]
         cmp AL, 22
         jne error_login
-        inc SI
         mov DI, offset pass
-        mov CX, 00
-        mov BX, 01
+        mov CL, 00
+        mov BX, 0001
 loop_pass:
         mov AL, [SI]
         cmp AL, 22
         je end_loop_pass
         mov [DI+BX], AL
         inc SI
-        inc CX
+        inc CL
         inc BX
         jmp loop_pass
 end_loop_pass:
-        mov [DI], CX
+        mov [DI], CL
         mov AL, [status]
         inc AL
         mov [status], AL
-        jmp cycle_lineXline
+        jmp init_lineXline
 ask_user_pass: ; ------------- Ask at user the user and pass
         print username
-        mov AH, 0a
-        mov DX, offset user_buffer
-        int 21
+        get_string user_buffer
+        print new_line
 
         print carne
-        mov AH, 0a
-        mov DX, offset pass_buffer
-        int 21
+        get_string pass_buffer
+        print new_line
         
         ; Check if username and password are correct
         mov SI, offset user_buffer
+        add SI, 02
         mov DI, offset user
         mov CX, [DI]
+        mov CH, 00
         inc DI
         call compare_string
-        cmp DX, 01
-        jne error_login
+        cmp DX, 0001
+        jne error_login_cred
 
         mov SI, offset pass_buffer
+        add SI, 02
         mov DI, offset pass
         mov CX, [DI]
+        mov CH, 00
         inc DI
         call compare_string
-        cmp DX, 01
-        jne error_login
+        cmp DX, 0001
+        jne error_login_cred
         jmp success_login
 error_login:    ;--------------------- File has to be closed
+        mov BX, [handle_conf]
+        mov AH, 3e
+        int 21
+
         print login_error
         jmp close
+error_login_file:
+        print loginfile_error
+        jmp close
+error_login_cred:
+        print loginauth_error
+        jmp error_login
 success_login:  ;--------------------- File has to be closed
-        print login_success
-        mov AH, 08
+        mov BX, [handle_conf]
+        mov AH, 3e
         int 21
-        cmp AL, 20
-        jne success_login
-        ;----------------------------------------------End of login
+
+        print login_success
+        call get_pressed_key
+        cmp AL, 0d
+        jne success_login ;------------------ End of login
+principal_menu: ;----------------------------------------------Start of principal menu
+        print new_line
+        print menu_msg
+        print products
+        print sales
+        print utils
+        call get_pressed_key
+        cmp AL, 50 ;------------------ Products
+        je products_menu
+        cmp AL, 70 ;------------------ Products
+        je products_menu
+        cmp AL, 56 ;------------------ Sales
+        je sales_menu
+        cmp AL, 76 ;------------------ Sales
+        je sales_menu
+        cmp AL, 48 ;------------------ Utils
+        je utils_menu
+        cmp AL, 68 ;------------------ Utils
+        je utils_menu
+        jmp principal_menu ;------------------ End of principal menu
+products_menu: ;----------------------------------------------Start of products menu
+        print new_line
+        print products_msg
+        print products_create_msg
+        print products_delete_msg
+        print products_show_msg
+        call get_pressed_key
+        cmp AL, 43 ;------------------ Create
+        je products_create
+        cmp AL, 63 ;------------------ Create
+        je products_create
+        cmp AL, 45 ;------------------ Delete
+        je products_delete
+        cmp AL, 65 ;------------------ Delete
+        je products_delete
+        cmp AL, 4d ;------------------ Show
+        je products_show
+        cmp AL, 6d ;------------------ Show
+        je products_show
+        jmp products_menu ;------------------ End of products menu
+products_create: ;----------------------------------------------Start of products create
+        print new_line
+        print req_product
+get_code_product: ;--------------------- Get code product
+        print req_code
+        get_string in_buffer
+        mov DI, offset in_buffer ;------ Validate code product, PENDING need to validate if chars are in acceptable range
+        inc DI
+        mov AL, [DI]
+        cmp AL, 00
+        je get_code_product
+        cmp AL, 06
+        jb accept_code_product
+        jmp get_code_product
+accept_code_product: ;--------------------- Accept code product
+        mov DI, offset product_code
+        mov SI, offset in_buffer
+        inc SI
+        mov CH, 00
+        mov CL, [SI]
+        inc SI
+        call copy_string
+get_desc_product:
+        print req_desc
+        get_string in_buffer
+        mov DI, offset in_buffer ;------ Validate desc product, PENDING need to validate if chars are in acceptable range
+        inc DI
+        mov AL, [DI]
+        cmp AL, 00
+        je get_desc_product
+        cmp AL, 22
+        jb accept_desc_product
+        jmp get_desc_product
+accept_desc_product: ;--------------------- Accept desc product
+        mov DI, offset product_desc
+        mov SI, offset in_buffer
+        inc SI
+        mov CH, 00
+        mov CL, [SI]
+        inc SI
+        call copy_string
+get_price_product:
+        print req_price
+        get_string in_buffer
+        mov DI, offset in_buffer ;------ Validate price product, PENDING need to validate if chars are in acceptable range
+        inc DI
+        mov AL, [DI]
+        cmp AL, 00
+        je get_price_product
+        cmp AL, 06
+        jb accept_price_product
+        jmp get_price_product
+accept_price_product: ;--------------------- Accept price product
+        mov DI, offset product_price
+        mov SI, offset in_buffer
+        inc SI
+        mov CH, 00
+        mov CL, [SI]
+        inc SI
+        call copy_string
+
+        mov DI, offset product_price
+        call string_to_int
+        mov [product_num_price], AX
+
+        mov DI, offset product_price
+        mov CX, 0005
+        mov AL, 00
+        call memset
+get_stock_product:
+        print req_stock
+        get_string in_buffer
+        mov DI, offset in_buffer ;------ Validate stock product, PENDING need to validate if chars are in acceptable range
+        inc DI
+        mov AL, [DI]
+        cmp AL, 00
+        je get_stock_product
+        cmp AL, 06
+        jb accept_stock_product
+        jmp get_stock_product
+accept_stock_product: ;--------------------- Accept stock product
+        mov DI, offset product_stock
+        mov SI, offset in_buffer
+        inc SI
+        mov CH, 00
+        mov CL, [SI]
+        inc SI
+        call copy_string
+
+        mov DI, offset product_stock
+        call string_to_int
+        mov [product_num_stock], AX
+
+        mov DI, offset product_stock
+        mov CX, 0005
+        mov AL, 00
+        call memset
+open_product_file:
+        mov AL, 02
+        mov AH, 3d
+        mov DX, offset products_file
+        int 21
+        ; If error we need create the file
+        jc create_product_file
+        ; If not error write at the end of file
+        jmp save_product
+create_product_file:
+        mov CX, 0000
+        mov DX, offset products_file
+        mov AH, 3c
+        int 21
+save_product:
+        mov [handle_products], AX
+        mov BX, [handle_products]
+        ; We go to the end of file
+        mov CX, 0000
+        mov DX, 0000
+        mov AH, 42
+        mov AL, 02
+        int 21
+        ; We write the product
+        mov CX, 0026
+        mov DX, offset product_code
+        mov AH, 40
+        int 21
+        mov CX, 0004
+        mov DX, offset product_num_price
+        mov AH, 40
+        int 21
+        ; We close the file
+        mov AH, 3e
+        int 21
+        jmp products_menu ;------------------ End of products create
+products_delete: ;----------------------------------------------Start of products delete
+
+products_show: ;----------------------------------------------Start of products show
+
+sales_menu: ;-------------------------------------------------Start of sales menu
+
+utils_menu: ;------------------------------------------------Start of utils menu
+
 close:
 .EXIT
 END
