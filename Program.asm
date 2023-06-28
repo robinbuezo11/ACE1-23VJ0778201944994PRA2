@@ -78,7 +78,34 @@ req_stock               db  "Unidades: ", "$"
 product_num_price       dw  0000
 product_num_stock       dw  0000
 product_tmp             db  28 dup (0)
+show_product_code       db  04 dup (0), " $"
+show_product_desc       db  20 dup (0), " $"
+show_msg                db  "Presione 'Enter' para continuar o 'q' para salir", 0a, "$"
 
+; Utils
+utils_msg               db  "UTILIDADES", 0a, "$"
+utils_catalog_msg       db  "(C)atalogo de Productos", 0a, "$"
+utils_alph_msg          db  "(R)eporte Alfabetico", 0a, "$"
+utils_stockzero_msg     db  "(P)roductos sin Stock", 0a, "$"
+report_generated_msg    db  "Reporte generado exitosamente", 0a, "$"
+catalog_file            db  "CATALG.HTM", 00
+alph_file               db  "ABC.HTM", 00
+stockzero_file          db  "FALTA.HTM", 00
+handle_reports          dw  0000
+
+; HTML
+size_header_html        db  0c
+header_html             db  "<html><body>"
+size_init_table         db  5c
+init_table              db  "<table border=1><tr><th>Codigo</th><th>Descripcion</th><th>Precio</th><th>Unidades</th></tr>"
+size_end_table          db  8
+end_table               db  "</table>"
+size_footer_html        db  0e
+footer_html             db  "</body></html>"
+tdopen                  db  "<td>"
+tdclose                 db  "</td>"
+tropen                  db  "<tr>"
+trclose                 db  "</tr>"
 
 .CODE
 .STARTUP
@@ -218,6 +245,143 @@ cycle_memset:
         loop cycle_memset
         ret
         ;----------------------------------------------End of memset
+
+print_struct_html: ;-----------------------------------Start of print_struct_html
+        ; Print product struct in html file
+        ; Input: BX = handle
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CX, 0004
+        mov DX, offset tropen
+        int 21
+
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CX, 0004
+        mov DX, offset tdopen
+        int 21
+
+        mov DX, offset product_code
+        mov SI, 0000
+cycle_print_code:
+        mov DI, DX
+        mov AL, [DI]
+        cmp AL, 00
+        je print_description
+        cmp SI, 0004
+        je print_description
+        mov CX, 0001
+        mov BX, [handle_reports]
+        mov AH, 40
+        int 21
+        inc DX
+        inc SI
+        jmp cycle_print_code
+print_description:
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CX, 0005
+        mov DX, offset tdclose
+        int 21
+
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CX, 0004
+        mov DX, offset tdopen
+        int 21
+
+        mov DX, offset product_desc
+        mov SI, 0000
+cycle_print_desc:
+        mov DI, DX
+        mov AL, [DI]
+        cmp AL, 00
+        je print_price
+        cmp SI, 0020
+        je print_price
+        mov CX, 0001
+        mov BX, [handle_reports]
+        mov AH, 40
+        int 21
+        inc DX
+        inc SI
+        jmp cycle_print_desc
+print_price:
+        mov AX, [product_num_price]
+        call int_to_string
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CX, 0005
+        mov DX, offset tdclose
+        int 21
+
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CX, 0004
+        mov DX, offset tdopen
+        int 21
+
+        mov DX, offset number
+        mov SI, 0000
+cycle_print_price:
+        mov DI, DX
+        mov AL, [DI]
+        cmp AL, 00
+        je print_stock
+        cmp SI, 0005
+        je print_stock
+        mov CX, 0001
+        mov BX, [handle_reports]
+        mov AH, 40
+        int 21
+        inc DX
+        inc SI
+        jmp cycle_print_price
+print_stock:
+        mov AX, [product_num_stock]
+        call int_to_string
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CX, 0005
+        mov DX, offset tdclose
+        int 21
+
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CX, 0004
+        mov DX, offset tdopen
+        int 21
+
+        mov DX, offset number
+        mov SI, 0000
+cycle_print_stock:
+        mov DI, DX
+        mov AL, [DI]
+        cmp AL, 00
+        je close_tags
+        cmp SI, 0005
+        je close_tags
+        mov CX, 0001
+        mov BX, [handle_reports]
+        mov AH, 40
+        int 21
+        inc DX
+        inc SI
+        jmp cycle_print_stock
+close_tags:
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CX, 0005
+        mov DX, offset tdclose
+        int 21
+
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CX, 0005
+        mov DX, offset trclose
+        int 21
+        ret
+        ;-----------------------------------End of print_struct_html
 
 ;---------------------------- PROGRAM -----------------------------------
 start:
@@ -770,11 +934,176 @@ products_show: ;----------------------------------------------Start of products 
         ; SHOW 5 PRODUCTS AND WAIT FOR KEY
         ;       IF KEY IS 'ENTER' SHOW NEXT 5 PRODUCTS
         ;       IF KEY IS 'q' RETURN TO PRODUCTS MENU
-        
+show_prods:
+        mov SI, 0005 ;------------------ Show 5 products
+show_cycle:
+        print new_line
+        mov BX, [handle_products]
+        mov CX, 0004
+        mov DX, offset show_product_code
+        mov AH, 3f
+        int 21
+        cmp AX, 0000 ;------------------ End of file
+        je close_show
+
+        mov BX, [handle_products]
+        mov CX, 0020
+        mov DX, offset show_product_desc
+        mov AH, 3f
+        int 21
+
+        mov BX, [handle_products]
+        mov CX, 0004
+        mov DX, offset product_num_price
+        mov AH, 3f
+        int 21
+
+        print show_product_code
+        print show_product_desc
+        sub SI, 0001
+        cmp SI, 0000
+        je end_show
+        jmp show_cycle
+end_show:
+        print new_line
+        print new_line
+        print show_msg
+        call get_pressed_key
+        cmp AL, 0d
+        je show_prods
+        cmp AL, 71
+        je close_show
+        jmp end_show
+close_show:
+        print new_line
+        mov AH, 3e
+        int 21
+
+        ; We clean the variables
+        mov DI, offset show_product_code
+        mov CX, 0004
+        mov AL, 00
+        call memset
+        mov DI, offset show_product_desc
+        mov CX, 0020
+        mov AL, 00
+        call memset
+        mov DI, offset product_num_price
+        mov CX, 0004
+        mov AL, 00
+        call memset
+
+        jmp products_menu ;------------------ End of products show
 sales_menu: ;-------------------------------------------------Start of sales menu
 
 utils_menu: ;------------------------------------------------Start of utils menu
+        print new_line
+        print utils_msg
+        print utils_catalog_msg
+        print utils_alph_msg
+        print utils_stockzero_msg
+        print back_option
+        call get_pressed_key
+        cmp AL, 43 ;------------------ Catalog
+        je generate_catalog
+        cmp AL, 63 ;------------------ Catalog
+        je generate_catalog
+        ; cmp AL, 45 ;------------------ Delete
+        ; je products_delete
+        ; cmp AL, 65 ;------------------ Delete
+        ; je products_delete
+        ; cmp AL, 4d ;------------------ Show
+        ; je products_show
+        ; cmp AL, 6d ;------------------ Show
+        ; je products_show
+        cmp AL, 52 ;------------------ Back
+        je principal_menu
+        cmp AL, 72 ;------------------ Back
+        je principal_menu
+        jmp utils_menu ;------------------ End of products menu
+generate_catalog:
+        mov AL, 00
+        mov AH, 3c
+        mov DX, offset catalog_file
+        int 21
+        mov [handle_reports], AX
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, [size_header_html]
+        mov DX, offset size_header_html
+        int 21
 
+        mov AH, 2a
+        int 21
+        int 03
+        
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, [size_init_table]
+        mov DX, offset init_table
+        int 21
+        
+        mov AL, 02
+        mov AH, 3d
+        mov DX, offset catalog_file
+        int 21
+
+        mov [handle_products], AX
+catalog_cycle:
+        mov BX, [handle_products]
+        mov CX, 0024
+        mov DX, offset product_code
+        mov AH, 3f
+        int 21
+
+        mov BX, [handle_products]
+        mov CX, 0004
+        mov DX, offset product_num_price
+        mov AH, 3f
+        int 21
+
+        cmp AX, 0000 ;------------------ End of file
+        je close_catalog
+
+        mov AL, 00      ;------------------ Verify if product is valid
+        cmp [product_code], AL
+        je catalog_cycle
+
+        call print_struct_html
+        jmp catalog_cycle
+close_catalog:
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, [size_end_table]
+        mov DX, offset end_table
+        int 21
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, [size_footer_html]
+        mov DX, offset footer_html
+
+        ; We clean the variables
+        mov DI, offset product_code
+        mov CX, 0024
+        mov AL, 00
+        call memset
+        mov DI, offset product_num_price
+        mov CX, 0004
+        mov AL, 00
+        call memset
+        mov DI, offset number
+        mov CX, 0005
+        mov AL, 00
+        call memset
+
+        int 21
+        mov AH, 3e
+        int 21
+        jmp utils_menu
 close:
 .EXIT
 END
