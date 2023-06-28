@@ -96,8 +96,8 @@ handle_reports          dw  0000
 ; HTML
 size_header_html        db  0c
 header_html             db  "<html><body>"
-size_init_table         db  5c
-init_table              db  "<table border=1><tr><th>Codigo</th><th>Descripcion</th><th>Precio</th><th>Unidades</th></tr>"
+size_init_table         db  64
+init_table              db  "<br><br><table border=1><tr><th>Codigo</th><th>Descripcion</th><th>Precio</th><th>Unidades</th></tr>"
 size_end_table          db  8
 end_table               db  "</table>"
 size_footer_html        db  0e
@@ -106,6 +106,10 @@ tdopen                  db  "<td>"
 tdclose                 db  "</td>"
 tropen                  db  "<tr>"
 trclose                 db  "</tr>"
+date                    db  "Fecha: ", "$"
+hour                    db  "   Hora: ", "$"
+dash                    db  "-", "$"
+colon                   db  ":", "$"
 
 .CODE
 .STARTUP
@@ -382,6 +386,96 @@ close_tags:
         int 21
         ret
         ;-----------------------------------End of print_struct_html
+
+write_dash: ;------------------------------------------Start of write_dash
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, 01
+        mov DX, offset dash
+        int 21
+        ret
+        ;------------------------------------------End of write_dash
+
+write_colon: ;-----------------------------------------Start of write_colon
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, 01
+        mov DX, offset colon
+        int 21
+        ret
+        ;------------------------------------------End of write_colon
+
+write_date: ;------------------------------------------Start of write_date
+        mov AH, 2a
+        int 21
+        mov AX, CX
+        call int_to_string
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, 04
+        mov DX, offset number
+        inc DX
+        int 21
+        call write_dash
+        mov AH, 2a
+        int 21
+        mov AH, 00
+        mov AL, DH
+        call int_to_string
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, 02
+        mov DX, offset number
+        add DX, 03
+        int 21
+        call write_dash
+        mov AH, 2a
+        int 21
+        mov AH, 00
+        mov AL, DL
+        call int_to_string
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, 02
+        mov DX, offset number
+        add DX, 03
+        int 21
+        ret
+        ;------------------------------------------End of write_date
+
+write_hour: ;-------------------------------------------Start of write_hour
+        mov AH, 2c
+        int 21
+        mov AH, 00
+        mov AL, CH
+        call int_to_string
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, 02
+        mov DX, offset number
+        add DX, 03
+        int 21
+        call write_colon
+        mov AH, 2c
+        int 21
+        mov AH, 00
+        mov AL, CL
+        call int_to_string
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, 02
+        mov DX, offset number
+        add DX, 03
+        int 21
+        ret
+        ;-------------------------------------------End of write_hour
 
 ;---------------------------- PROGRAM -----------------------------------
 start:
@@ -1031,13 +1125,29 @@ generate_catalog:
         mov AH, 40
         mov CH, 00
         mov CL, [size_header_html]
-        mov DX, offset size_header_html
+        mov DX, offset header_html
         int 21
 
-        mov AH, 2a
+        ; Write the date and time
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, 07
+        mov DX, offset date
         int 21
-        int 03
+
+        call write_date
+
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, 09
+        mov DX, offset hour
+        int 21
+
+        call write_hour
         
+        ; Write table init
         mov BX, [handle_reports]
         mov AH, 40
         mov CH, 00
@@ -1045,9 +1155,9 @@ generate_catalog:
         mov DX, offset init_table
         int 21
         
-        mov AL, 02
+        mov AL, 00
         mov AH, 3d
-        mov DX, offset catalog_file
+        mov DX, offset products_file
         int 21
 
         mov [handle_products], AX
@@ -1085,6 +1195,7 @@ close_catalog:
         mov CH, 00
         mov CL, [size_footer_html]
         mov DX, offset footer_html
+        int 21
 
         ; We clean the variables
         mov DI, offset product_code
@@ -1100,9 +1211,14 @@ close_catalog:
         mov AL, 00
         call memset
 
-        int 21
+        print report_generated_msg
+
         mov AH, 3e
         int 21
+        mov BX, [handle_products]
+        mov AH, 3e
+        int 21
+
         jmp utils_menu
 close:
 .EXIT
