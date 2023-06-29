@@ -12,6 +12,7 @@ new_line        db  0a, "$"
 in_buffer       db  20, 00
                 db  20 dup (0)
 number          db  05 dup (30)
+number_zero     db  05 dup (30)
 exit_option     db  "(S)alir", 0a, "$"
 back_option     db  "(R)egresar", 0a, "$"
 
@@ -85,7 +86,7 @@ show_msg                db  "Presione 'Enter' para continuar o 'q' para salir", 
 ; Utils
 utils_msg               db  "UTILIDADES", 0a, "$"
 utils_catalog_msg       db  "(C)atalogo de Productos", 0a, "$"
-utils_alph_msg          db  "(R)eporte Alfabetico", 0a, "$"
+utils_alph_msg          db  "(O)rden Alfabetico", 0a, "$"
 utils_stockzero_msg     db  "(P)roductos sin Stock", 0a, "$"
 report_generated_msg    db  "Reporte generado exitosamente", 0a, "$"
 catalog_file            db  "CATALG.HTM", 00
@@ -110,6 +111,10 @@ date                    db  "Fecha: ", "$"
 hour                    db  "   Hora: ", "$"
 dash                    db  "-", "$"
 colon                   db  ":", "$"
+br                      db  "<br>"
+letter                  db  01 dup (0)
+space                   db  " ", "$"
+hr                      db  "<hr>"
 
 .CODE
 .STARTUP
@@ -134,6 +139,18 @@ endm
 
 ;-------------------------- SUBROUTINES --------------------------------
 ;-----------------------------------------------------------------------
+memset: ;----------------------------------------------Start of memset
+        ; Set memory
+        ; Input: DI = memory
+        ;        CX = length
+        ;        AL = value
+cycle_memset:
+        mov [DI], AL
+        inc DI
+        loop cycle_memset
+        ret
+        ;----------------------------------------------End of memset
+
 compare_string: ;--------------------------------Start of compare_string
         ; Compare two strings
         ; Input: SI = string A
@@ -202,6 +219,8 @@ int_to_string: ;------------------------------------Start of int_to_string
         ; Convert int to string
         ; Input: AX = int
         ; Output: [number] = string
+        cmp AX, 0000
+        je end_int_zero
         mov CX, 0005
         mov DI, offset number
 cycle_set30:
@@ -236,19 +255,13 @@ increase_next_cycle:
         loop cycle_int_to_string
 end_int_to_string:
         ret
-        ;------------------------------------End of int_to_string
-
-memset: ;----------------------------------------------Start of memset
-        ; Set memory
-        ; Input: DI = memory
-        ;        CX = length
-        ;        AL = value
-cycle_memset:
-        mov [DI], AL
-        inc DI
-        loop cycle_memset
+end_int_zero:
+        mov DI, offset number
+        mov CX, 0005
+        mov AL, 30
+        call memset
         ret
-        ;----------------------------------------------End of memset
+        ;------------------------------------End of int_to_string
 
 print_struct_html: ;-----------------------------------Start of print_struct_html
         ; Print product struct in html file
@@ -476,6 +489,86 @@ write_hour: ;-------------------------------------------Start of write_hour
         int 21
         ret
         ;-------------------------------------------End of write_hour
+
+write_br: ;----------------------------------------------Start of write_br
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, 04
+        mov DX, offset br
+        int 21
+        ret
+        ;----------------------------------------------End of write_br
+
+print_alph_product: ;--------------------------------Start of print_alph_product
+        ; Print product struct in html file
+        ; Input: BX = handle
+        mov DX, offset product_code
+        mov SI, 0000
+cycle_print_code_alph:
+        mov DI, DX
+        mov AL, [DI]
+        cmp AL, 00
+        je print_description_alph
+        cmp SI, 0004
+        je print_description_alph
+        mov CX, 0001
+        mov BX, [handle_reports]
+        mov AH, 40
+        int 21
+        inc DX
+        inc SI
+        jmp cycle_print_code_alph
+print_description_alph:
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CX, 0001
+        mov DX, offset space
+        int 21
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CX, 0001
+        mov DX, offset dash
+        int 21
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CX, 0001
+        mov DX, offset space
+        int 21
+        mov DX, offset product_desc
+        mov SI, 0000
+cycle_print_desc_alph:
+        mov DI, DX
+        mov AL, [DI]
+        cmp AL, 00
+        je end_print_alph_product
+        cmp SI, 0020
+        je end_print_alph_product
+        mov CX, 0001
+        mov BX, [handle_reports]
+        mov AH, 40
+        int 21
+        inc DX
+        inc SI
+        jmp cycle_print_desc_alph
+end_print_alph_product:
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CX, 0004
+        mov DX, offset br
+        int 21
+        ret
+        ;-----------------------------------End of print_alph_product
+
+write_hr:
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, 04
+        mov DX, offset hr
+        int 21
+        ret
+        ;----------------------------------------------End of write_hr
 
 ;---------------------------- PROGRAM -----------------------------------
 start:
@@ -755,7 +848,6 @@ products_create: ;----------------------------------------------Start of product
         print new_line
         print req_product
 get_code_product: ;--------------------- Get code product
-        int 03
         print new_line
         print req_code
         get_string in_buffer
@@ -963,7 +1055,6 @@ accept_code_delete: ;--------------------- Accept code product to delete
         int 21
         mov [handle_products], AX
 find_cycle:
-        int 03
         mov BX, [handle_products]
         mov CX, 0024
         mov DX, offset product_code
@@ -1102,14 +1193,14 @@ utils_menu: ;------------------------------------------------Start of utils menu
         je generate_catalog
         cmp AL, 63 ;------------------ Catalog
         je generate_catalog
-        ; cmp AL, 45 ;------------------ Delete
-        ; je products_delete
-        ; cmp AL, 65 ;------------------ Delete
-        ; je products_delete
-        ; cmp AL, 4d ;------------------ Show
-        ; je products_show
-        ; cmp AL, 6d ;------------------ Show
-        ; je products_show
+        cmp AL, 4f ;------------------ Alphabetic
+        je generate_alph
+        cmp AL, 6f ;------------------ Alphabetic
+        je generate_alph
+        cmp AL, 50 ;------------------ Stock zero
+        je generate_stockzero
+        cmp AL, 70 ;------------------ Stock zero
+        je generate_stockzero
         cmp AL, 52 ;------------------ Back
         je principal_menu
         cmp AL, 72 ;------------------ Back
@@ -1184,6 +1275,234 @@ catalog_cycle:
         call print_struct_html
         jmp catalog_cycle
 close_catalog:
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, [size_end_table]
+        mov DX, offset end_table
+        int 21
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, [size_footer_html]
+        mov DX, offset footer_html
+        int 21
+
+        ; We clean the variables
+        mov DI, offset product_code
+        mov CX, 0024
+        mov AL, 00
+        call memset
+        mov DI, offset product_num_price
+        mov CX, 0004
+        mov AL, 00
+        call memset
+        mov DI, offset number
+        mov CX, 0005
+        mov AL, 00
+        call memset
+
+        print report_generated_msg
+
+        mov AH, 3e
+        int 21
+        mov BX, [handle_products]
+        mov AH, 3e
+        int 21
+
+        jmp utils_menu
+generate_alph:
+        mov AL, 00
+        mov AH, 3c
+        mov DX, offset alph_file
+        int 21
+        mov [handle_reports], AX
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, [size_header_html]
+        mov DX, offset header_html
+        int 21
+
+        ; Write the date and time
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, 07
+        mov DX, offset date
+        int 21
+
+        call write_date
+
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, 09
+        mov DX, offset hour
+        int 21
+
+        call write_hour
+                
+        mov AL, 00
+        mov AH, 3d
+        mov DX, offset products_file
+        int 21
+
+        mov [handle_products], AX
+        mov CX, 001a
+
+        call write_br
+        call write_hr
+
+        mov AL, 40
+        mov [letter], AL
+init_alph_cycle: ;------------------ We position the file pointer at the beginning of the file
+        mov AL, [letter]
+        inc AL
+        mov [letter], AL
+
+        cmp AL, 5b ;------------------ End of letters
+        je close_alph
+
+        mov AL, 00
+        mov BX, [handle_products]
+        mov CX, 0000
+        mov DX, 0000
+        mov AH, 42
+        int 21
+
+        call write_br
+
+        mov BX, [handle_reports] ;------------------ Write the letter
+        mov AH, 40
+        mov CH, 00
+        mov CL, 01
+        mov DX, offset letter
+        int 21
+
+        call write_br
+alph_cycle:
+        mov BX, [handle_products]
+        mov CX, 0024
+        mov DX, offset product_code
+        mov AH, 3f
+        int 21
+
+        mov BX, [handle_products]
+        mov CX, 0004
+        mov DX, offset product_num_price
+        mov AH, 3f
+        int 21
+
+        cmp AX, 0000 ;------------------ End of file
+        je init_alph_cycle
+
+        mov AL, 00      ;------------------ Verify if product is valid
+        cmp [product_code], AL
+        je alph_cycle
+
+        mov AL, [letter]
+        cmp [product_desc], AL
+        jne alph_cycle
+
+        call print_alph_product
+
+        jmp alph_cycle
+close_alph:
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, [size_footer_html]
+        mov DX, offset footer_html
+        int 21
+
+        ; We clean the variables
+        mov DI, offset product_code
+        mov CX, 0028
+        mov AL, 00
+        call memset
+
+        print report_generated_msg
+
+        mov AH, 3e
+        int 21
+        mov BX, [handle_products]
+        mov AH, 3e
+        int 21
+
+        jmp utils_menu
+generate_stockzero:
+        mov AL, 00
+        mov AH, 3c
+        mov DX, offset stockzero_file
+        int 21
+        mov [handle_reports], AX
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, [size_header_html]
+        mov DX, offset header_html
+        int 21
+
+        ; Write the date and time
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, 07
+        mov DX, offset date
+        int 21
+
+        call write_date
+
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, 09
+        mov DX, offset hour
+        int 21
+
+        call write_hour
+        
+        ; Write table init
+        mov BX, [handle_reports]
+        mov AH, 40
+        mov CH, 00
+        mov CL, [size_init_table]
+        mov DX, offset init_table
+        int 21
+        
+        mov AL, 00
+        mov AH, 3d
+        mov DX, offset products_file
+        int 21
+
+        mov [handle_products], AX
+zero_cycle:
+        mov BX, [handle_products]
+        mov CX, 0024
+        mov DX, offset product_code
+        mov AH, 3f
+        int 21
+
+        mov BX, [handle_products]
+        mov CX, 0004
+        mov DX, offset product_num_price
+        mov AH, 3f
+        int 21
+
+        cmp AX, 0000 ;------------------ End of file
+        je close_zero
+
+        mov AL, 00      ;------------------ Verify if product is valid
+        cmp [product_code], AL
+        je zero_cycle
+
+        cmp [product_num_stock], 0000
+        jne zero_cycle
+
+        call print_struct_html
+        jmp zero_cycle
+close_zero:
         mov BX, [handle_reports]
         mov AH, 40
         mov CH, 00
